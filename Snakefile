@@ -5,6 +5,10 @@
 # proj.get_sample('n5d2')
 
 
+#############
+# FUNCTIONS #
+#############
+
 def get_bc(wildcards):
     my_pep = pep.get_sample(wildcards.sample).to_dict()
     return my_pep['bc']
@@ -20,21 +24,95 @@ def get_sample_reads(wildcards):
         return [my_pep[x] for x in my_keys]
 
 
+def pick_trinity_input(wildcards):
+    if wildcards.run == 'merged':
+        return {
+            'r1':
+            expand('output/000_tmp/{sample}.r1_joined_with_merged.fastq',
+                   sample=all_samples),
+            'r2':
+            expand('output/020_merged/{sample}_R2.fastq',
+                   sample=all_samples)}
+    elif wildcards.run == 'raw':
+        return {
+            'r1':
+            expand('output/010_reads/{sample}_R1.fastq',
+                   sample=all_samples),
+            'r2':
+            expand('output/010_reads/{sample}_R2.fastq',
+                   sample=all_samples)}
+    else:
+        raise ValueError(f'wtf run {wildcards.run}')
+
+
+###########
+# GLOBALS #
+###########
+
 bbduk = 'shub://TomHarrop/seq-utils:bbmap_38.76'
+trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
 
 
 # samples
 pepfile: 'config/config.yaml'
-all_samples = pep.sample_table['sample_name']
+all_samples = sorted(set(pep.sample_table['sample_name']))
 
+
+#########
+# RULES #
+#########
 
 rule target:
     input:
-        # expand('output/000_tmp/{sample}.r{r}.fastq',
-        #        sample=all_samples,
-        #        r=[1, 2])
-        expand('output/020_merged/{sample}_merged.fastq',
-               sample=all_samples)
+        expand('output/030_trinity/trinity.{run}/read_partitions.tar',
+               run=['merged', 'raw'])
+
+# trinity
+rule trinity_cleanup:
+    input:
+        'output/030_trinity/trinity.{run}/read_partitions'
+    output:
+        'output/030_trinity/trinity.{run}/read_partitions.tar'
+    log:
+        'output/logs/trinity_cleanup.{run}.log'
+    shell:
+        'tar -cvf '
+        '{output} '
+        '{input} '
+        '&> {log}'
+
+rule trinity:
+    input:
+        unpack(pick_trinity_input)
+    output:
+        'output/030_trinity/trinity.{run}/Trinity.fasta',
+        'output/030_trinity/trinity.{run}/Trinity.fasta.gene_trans_map',
+        temp(directory(
+            'output/030_trinity/trinity.{run}/read_partitions'))
+    params:
+        outdir = 'output/030_trinity/trinity.{run}',
+        r1 = lambda wildcards, input:
+            ','.join(input.r1),
+        r2 = lambda wildcards, input:
+            ','.join(input.r2)
+    log:
+        'output/logs/trinity.{run}.log'
+    threads:
+        workflow.cores
+    singularity:
+        trinity
+    shell:
+        'Trinity '
+        # '--FORCE '
+        '--seqType fq '
+        '--max_memory 800G '
+        '--left {params.r1} '
+        '--right {params.r2} '
+        '--SS_lib_type RF '
+        '--CPU {threads} '
+        '--output {params.outdir} '
+        '&> {log}'
+
 
 
 # merge the input reads, try with and without
@@ -215,6 +293,7 @@ rule check_barcodes:
         '>> {output} '
         '2> {log}'
 
+# make this temp later, but we'll use it for fastqc
 rule combine_read_file:
     input:
         get_sample_reads
