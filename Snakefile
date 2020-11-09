@@ -4,6 +4,7 @@
 # proj = peppy.Project('config/config.yaml')
 # proj.get_sample('n5d2')
 
+from pathlib import Path
 
 #############
 # FUNCTIONS #
@@ -45,6 +46,10 @@ def pick_trinity_input(wildcards):
         raise ValueError(f'wtf run {wildcards.run}')
 
 
+def posix_path(x):
+    return(Path(x).resolve().as_posix())
+
+
 ###########
 # GLOBALS #
 ###########
@@ -65,7 +70,84 @@ all_samples = sorted(set(pep.sample_table['sample_name']))
 rule target:
     input:
         expand('output/030_trinity/trinity.{run}/read_partitions.tar',
-               run=['merged', 'raw'])
+               run=['merged', 'raw']),
+        expand('output/040_trinity-abundance/{run}/salmon.isoform.counts.matrix',
+               run=['merged', 'raw']),
+
+
+# re-map reads
+rule abundance_to_matrix:
+    input:
+        qf = expand('output/040_trinity-abundance/{{run}}/{sample}/quant.sf',
+                    sample=all_samples),
+        gtm = 'output/030_trinity/trinity.{run}/Trinity.fasta.gene_trans_map',
+    output:
+        'output/040_trinity-abundance/{run}/salmon.isoform.counts.matrix',
+        'output/040_trinity-abundance/{run}/salmon.isoform.TPM.not_cross_norm'
+    params:
+        outdir = 'output/040_trinity-abundance/{run}'
+    log:
+        Path('output/logs/abundance_to_matrix.{run}.log').resolve()
+    singularity:
+        trinity
+    shell:
+        'cd {params.outdir} || exit 1 ; '
+        'abundance_estimates_to_matrix.pl '
+        '--est_method salmon '
+        '--gene_trans_map ' + posix_path('{input.gtm}') + ' '
+        '--name_sample_by_basedir '
+        '--basedir_index -2 '
+        + posix_path('{input.qf}') + ' '
+        '&> {log}'
+
+rule trinity_abundance:
+    input:
+        'output/030_trinity/trinity.{run}/Trinity.fasta.salmon.idx',
+        transcripts = 'output/030_trinity/trinity.{run}/Trinity.fasta',
+        r1 = expand('output/010_reads/{sample}_R1.fastq',
+                    sample=all_samples),
+        r2 = expand('output/010_reads/{sample}_R2.fastq',
+                    sample=all_samples),
+        samples_txt = 'config/trinity_samples.txt'
+    output:
+        expand('output/040_trinity-abundance/{{run}}/{sample}/quant.sf',
+               sample=all_samples)
+    params:
+        outdir = 'output/040_trinity-abundance/{run}',
+    log:
+        Path('output/logs/trinity_abundance.{run}.log').resolve()
+    threads:
+        workflow.cores
+    singularity:
+        trinity
+    shell:
+        'align_and_estimate_abundance.pl '
+        '--transcripts {input.transcripts} '
+        '--seqType fq '
+        '--samples_file {input.samples_txt} '
+        '--est_method salmon '
+        '--SS_lib_type RF '
+        '--thread_count {threads} '
+        '--trinity_mode '
+        '&> {log}'
+
+rule trinity_abundance_prep:
+    input:
+        transcripts = 'output/030_trinity/trinity.{run}/Trinity.fasta'
+    output:
+        directory('output/030_trinity/trinity.{run}/Trinity.fasta.salmon.idx')
+    log:
+        'output/logs/trinity_abundance_prep.{run}.log'
+    singularity:
+        trinity
+    shell:
+        'align_and_estimate_abundance.pl '
+        '--transcripts {input.transcripts} '
+        '--est_method salmon '
+        '--trinity_mode '
+        '--prep_reference '
+        '&> {log}'
+
 
 # trinity
 rule trinity_cleanup:
