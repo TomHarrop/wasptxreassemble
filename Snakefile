@@ -121,10 +121,11 @@ rule trinity_abundance:
     singularity:
         trinity
     shell:
+        'cd {params.outdir} || exit 1 ; '
         'align_and_estimate_abundance.pl '
-        '--transcripts {input.transcripts} '
+        '--transcripts ' + posix_path('{input.transcripts}') + ' '
         '--seqType fq '
-        '--samples_file {input.samples_txt} '
+        '--samples_file ' + posix_path('{input.samples_txt}') + ' '
         '--est_method salmon '
         '--SS_lib_type RF '
         '--thread_count {threads} '
