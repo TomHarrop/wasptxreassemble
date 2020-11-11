@@ -56,7 +56,7 @@ def posix_path(x):
 
 bbduk = 'shub://TomHarrop/seq-utils:bbmap_38.76'
 trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
-
+pandas_container = 'shub://TomHarrop/py-containers:pandas_0.25.3'
 
 # samples
 pepfile: 'config/config.yaml'
@@ -108,7 +108,7 @@ rule trinity_abundance:
                     sample=all_samples),
         r2 = expand('output/010_reads/{sample}_R2.fastq',
                     sample=all_samples),
-        samples_txt = 'config/trinity_samples.txt'
+        samples_txt = 'output/040_trinity-abundance/trinity_samples.txt'
     output:
         expand('output/040_trinity-abundance/{{run}}/{sample}/quant.sf',
                sample=all_samples)
@@ -131,6 +131,16 @@ rule trinity_abundance:
         '--thread_count {threads} '
         '--trinity_mode '
         '&> {log}'
+
+rule generate_samples_txt:
+    input:
+        samples_txt = 'config/trinity_samples.txt'
+    output:
+        samples_txt = 'output/040_trinity-abundance/trinity_samples.txt'
+    container:
+        pandas_container
+    script:
+        'src/generate_samples_txt.py'
 
 rule trinity_abundance_prep:
     input:
