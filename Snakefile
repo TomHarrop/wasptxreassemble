@@ -85,7 +85,8 @@ rule abundance_to_matrix:
         'output/040_trinity-abundance/{run}/salmon.isoform.counts.matrix',
         'output/040_trinity-abundance/{run}/salmon.isoform.TPM.not_cross_norm'
     params:
-        outdir = 'output/040_trinity-abundance/{run}'
+        outdir = 'output/040_trinity-abundance/{run}',
+        qf = lambda wildcards, input: ' '.join([posix_path(x) for x in input.qf])
     log:
         Path('output/logs/abundance_to_matrix.{run}.log').resolve()
     singularity:
@@ -97,7 +98,8 @@ rule abundance_to_matrix:
         '--gene_trans_map ' + posix_path('{input.gtm}') + ' '
         '--name_sample_by_basedir '
         '--basedir_index -2 '
-        + posix_path('{input.qf}') + ' '
+        '{params.qf} '
+        # posix_path('{input.qf}') +
         '&> {log}'
 
 rule trinity_abundance:
