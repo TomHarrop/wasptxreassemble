@@ -55,8 +55,9 @@ def posix_path(x):
 ###########
 
 bbduk = 'shub://TomHarrop/seq-utils:bbmap_38.76'
-trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
+bioconductor = 'shub://TomHarrop/r-containers:bioconductor_3.11'
 pandas_container = 'shub://TomHarrop/py-containers:pandas_0.25.3'
+trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
 
 # samples
 pepfile: 'config/config.yaml'
@@ -73,7 +74,25 @@ rule target:
                run=['merged', 'raw']),
         expand('output/040_trinity-abundance/{run}/salmon.isoform.counts.matrix',
                run=['merged', 'raw']),
+        expand('output/050_deseq/{run}/dds.salmon.Rds',
+               run=['merged', 'raw'])
 
+
+# deseq2
+rule generate_deseq_object_salmon:
+    input:
+        quant_files = expand(
+            'output/040_trinity-abundance/{{run}}/{sample}/quant.sf',
+            sample=all_samples),
+        tx2gene = 'output/030_trinity/trinity.{run}/Trinity.fasta.gene_trans_map'
+    output:
+        dds = 'output/050_deseq/{run}/dds.salmon.Rds'
+    log:
+        'output/logs/generate_deseq_object.{run}.log'
+    singularity:
+        bioconductor
+    script:
+        'src/generate_deseq_object.{run}.R'
 
 # re-map reads
 rule abundance_to_matrix:
