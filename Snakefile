@@ -92,7 +92,7 @@ rule generate_deseq_object_salmon:
     singularity:
         bioconductor
     script:
-        'src/generate_deseq_object.{run}.R'
+        'src/generate_deseq_object.R'
 
 # re-map reads
 rule abundance_to_matrix:
