@@ -58,10 +58,15 @@ bbduk = 'shub://TomHarrop/seq-utils:bbmap_38.76'
 bioconductor = 'shub://TomHarrop/r-containers:bioconductor_3.11'
 pandas_container = 'shub://TomHarrop/py-containers:pandas_0.25.3'
 trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
+star = 'shub://TomHarrop/align-utils:star_2.7.6a'
+samtools = 'shub://TomHarrop/align-utils:samtools_1.10'
 
 # samples
 pepfile: 'config/config.yaml'
 all_samples = sorted(set(pep.sample_table['sample_name']))
+
+ref = 'data/ref/GCA_014466185.1_ASM1446618v1_genomic.fna'
+gff = 'data/ref/GCA_014466185.1_ASM1446618v1_genomic.gff'
 
 
 #########
@@ -415,4 +420,147 @@ rule combine_read_file:
         'output/000_tmp/{sample}.r{r}.fastq'
     shell:
         'zcat {input} > {output}'
+
+
+# STAR mapping for genome-guided mode
+rule star_target:
+    input:
+        'output/030_trinity/trinity.genome/read_partitions.tar'
+
+
+rule trinity_genome:
+    input:
+        bam = 'output/025_star/merged.bam'
+    output:
+        'output/030_trinity/trinity.genome/Trinity.fasta',
+        'output/030_trinity/trinity.genome/Trinity.fasta.gene_trans_map',
+        temp(directory(
+            'output/030_trinity/trinity.genome/read_partitions'))
+    params:
+        outdir = 'output/030_trinity/trinity.genome',
+    log:
+        'output/logs/trinity.genome.log'
+    threads:
+        workflow.cores
+    singularity:
+        trinity
+    shell:
+        'Trinity '
+        # '--FORCE '
+        '--max_memory 800G '
+        ' --genome_guided_bam {input.bam} '
+        ' --genome_guided_max_intron 10000 '
+        '--SS_lib_type RF '
+        '--CPU {threads} '
+        '--output {params.outdir} '
+        '&> {log}'
+
+
+rule merge_bam:
+    input:
+        bam = expand('output/025_star/pass2/{sample}.Aligned.sortedByCoord.out.bam',
+                     sample=all_samples)
+    output:
+        'output/025_star/merged.bam'
+    log:
+        'output/logs/merge_bam.log'
+    threads:
+        min(20, workflow.cores)
+    container:
+        samtools
+    shell:
+        'samtools merge '
+        '-l 9 '
+        '-O BAM '
+        '-@ {threads} '
+        '{output} '
+        '{input.bam} '
+        '2> {log}'
+
+
+rule star_second_pass:
+    input:
+        r1 = 'output/010_reads/{sample}_R1.fastq',
+        r2 = 'output/010_reads/{sample}_R2.fastq',
+        star_reference = 'output/007_star-index/SA',
+        junctions = expand('output/025_star/pass1/{sample}.SJ.out.tab',
+                           sample=all_samples)
+    output:
+        bam = 'output/025_star/pass2/{sample}.Aligned.sortedByCoord.out.bam',
+        counts = 'output/025_star/pass2/{sample}.ReadsPerGene.out.tab'
+    threads:
+        workflow.cores
+    params:
+        genome_dir = 'output/007_star-index',
+        prefix = 'output/025_star/pass2/{sample}.'
+    log:
+        'output/logs/star_second_pass.{sample}.log'
+    container:
+        star
+    shell:
+        'STAR '
+        '--runThreadN {threads} '
+        '--genomeDir {params.genome_dir} '
+        '--sjdbFileChrStartEnd {input.junctions} '
+        '--outSAMtype BAM SortedByCoordinate '
+        '--outReadsUnmapped Fastx '
+        '--quantMode GeneCounts '
+        '--readFilesIn {input.r1} {input.r2} '
+        '--outFileNamePrefix {params.prefix} '
+        '&> {log}'
+
+rule star_first_pass:
+    input:
+        r1 = 'output/010_reads/{sample}_R1.fastq',
+        r2 = 'output/010_reads/{sample}_R2.fastq',
+        star_reference = 'output/007_star-index/SA'
+    output:
+        sjdb = 'output/025_star/pass1/{sample}.SJ.out.tab'
+    threads:
+        workflow.cores
+    params:
+        genome_dir = 'output/007_star-index',
+        prefix = 'output/025_star/pass1/{sample}.'
+    log:
+        'output/logs/star_first_pass.{sample}.log'
+    container:
+        star
+    shell:
+        'STAR '
+        '--runThreadN {threads} '
+        '--genomeDir {params.genome_dir} '
+        '--outSJfilterReads Unique '
+        '--outSAMtype None '          # troubleshoot gtf
+        # '--outSAMtype SAM '               # troubleshoot gtf
+        # '--quantMode GeneCounts '       # troubleshoot gtf
+        '--readFilesIn {input.r1} {input.r2} '
+        '--outFileNamePrefix {params.prefix} '
+        '&> {log}'
+
+rule star_index:
+    input:
+        fasta = ref,
+        gff = gff
+    output:
+        'output/007_star-index/SA'
+    params:
+        outdir = 'output/007_star-index'
+    log:
+        'output/logs/star_index.log'
+    threads:
+        workflow.cores
+    container:
+        star
+    shell:
+        'STAR '
+        'runThreadN {threads} '
+        '--runMode genomeGenerate '
+        '--genomeDir {params.outdir} '
+        '--genomeFastaFiles {input.fasta} '
+        '--sjdbGTFfile {input.gff} '
+        '--genomeSAindexNbases 12 '
+        '--sjdbGTFtagExonParentTranscript Parent '
+        '--sjdbGTFtagExonParentGene locus_tag '
+        '&> {log}'
+
 
