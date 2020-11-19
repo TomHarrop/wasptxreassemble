@@ -78,9 +78,9 @@ rule target:
         expand('output/030_trinity/trinity.{run}/read_partitions.tar',
                run=['merged', 'raw']),
         expand('output/040_trinity-abundance/{run}/salmon.isoform.counts.matrix',
-               run=['merged', 'raw']),
+               run=['merged', 'raw', 'genome']),
         expand('output/050_deseq/{run}/dds.salmon.Rds',
-               run=['merged', 'raw'])
+               run=['merged', 'raw', 'genome'])
 
 
 # deseq2
@@ -220,6 +220,8 @@ rule trinity:
         workflow.cores
     singularity:
         trinity
+    wildcard_constraints:
+        run = 'raw|merged'
     shell:
         'Trinity '
         # '--FORCE '
@@ -423,19 +425,23 @@ rule combine_read_file:
 
 
 # STAR mapping for genome-guided mode
-rule star_target:
+rule trinity_genome_cleanup:
     input:
-        'output/030_trinity/trinity.genome/read_partitions.tar'
-
+        fa = 'output/030_trinity/trinity.genome/Trinity-GG.fasta',
+        map = 'output/030_trinity/trinity.genome/Trinity-GG.fasta.gene_trans_map',
+    output:
+        fa = 'output/030_trinity/trinity.genome/Trinity.fasta',
+        map = 'output/030_trinity/trinity.genome/Trinity.fasta.gene_trans_map',
+    shell:
+        'cp {input.fa} {output.fa} ; '
+        'cp {input.map} {output.map}'
 
 rule trinity_genome:
     input:
         bam = 'output/025_star/merged.bam'
     output:
-        'output/030_trinity/trinity.genome/Trinity.fasta',
-        'output/030_trinity/trinity.genome/Trinity.fasta.gene_trans_map',
-        temp(directory(
-            'output/030_trinity/trinity.genome/read_partitions'))
+        'output/030_trinity/trinity.genome/Trinity-GG.fasta',
+        'output/030_trinity/trinity.genome/Trinity-GG.fasta.gene_trans_map',
     params:
         outdir = 'output/030_trinity/trinity.genome',
     log:
