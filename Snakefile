@@ -56,10 +56,11 @@ def posix_path(x):
 
 bbduk = 'shub://TomHarrop/seq-utils:bbmap_38.76'
 bioconductor = 'shub://TomHarrop/r-containers:bioconductor_3.11'
+minimap = 'shub://TomHarrop/align-utils:minimap2_2.17r941'
 pandas_container = 'shub://TomHarrop/py-containers:pandas_0.25.3'
-trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
-star = 'shub://TomHarrop/align-utils:star_2.7.6a'
 samtools = 'shub://TomHarrop/align-utils:samtools_1.10'
+star = 'shub://TomHarrop/align-utils:star_2.7.6a'
+trinity = 'shub://TomHarrop/assemblers:trinity_2.11.0'
 
 # samples
 pepfile: 'config/config.yaml'
@@ -80,7 +81,8 @@ rule target:
         expand('output/040_trinity-abundance/{run}/salmon.isoform.counts.matrix',
                run=['merged', 'raw', 'genome']),
         expand('output/050_deseq/{run}/dds.salmon.Rds',
-               run=['merged', 'raw', 'genome'])
+               run=['merged', 'raw', 'genome']),
+        'output/030_trinity/trinity.genome/mapped.sam'
 
 
 # deseq2
@@ -423,8 +425,31 @@ rule combine_read_file:
     shell:
         'zcat {input} > {output}'
 
-
 # STAR mapping for genome-guided mode
+rule trinity_genome_map:
+    input:
+        transcripts = 'output/030_trinity/trinity.genome/Trinity.fasta',
+        ref = ref
+    output:
+        'output/030_trinity/trinity.genome/mapped.sam'
+    log:
+        'output/logs/trinity_genome_map.log'
+    threads:
+        workflow.cores
+    container:
+        minimap
+    shell:
+        'minimap2 '
+        '-ax splice '
+        '-t {threads} '
+        '--cs '
+        '-u b '
+        '-G 10000 '
+        '{input.ref} '
+        '{input.transcripts} '
+        '> {output} '
+        '2> {log}'
+
 rule trinity_genome_cleanup:
     input:
         fa = 'output/030_trinity/trinity.genome/Trinity-GG.fasta',
