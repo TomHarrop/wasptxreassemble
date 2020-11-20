@@ -82,7 +82,7 @@ rule target:
                run=['merged', 'raw', 'genome']),
         expand('output/050_deseq/{run}/dds.salmon.Rds',
                run=['merged', 'raw', 'genome']),
-        'output/030_trinity/trinity.genome/mapped.sam'
+        'output/030_trinity/trinity.genome/mapped.sorted.bam'
 
 
 # deseq2
@@ -595,3 +595,24 @@ rule star_index:
         '&> {log}'
 
 
+rule samtools_sort:
+    input:
+        '{path}/{file}.sam'
+    output:
+        bam = '{path}/{file}.sorted.bam',
+        bai = '{path}/{file}.sorted.bam.bai'
+    log:
+        'output/logs/samtools_sort.{path}.{file}.log'
+    threads:
+        workflow.cores
+    container:
+        samtools
+    shell:
+        'samtools sort '
+        '-o {output.bam} '
+        '-O BAM '
+        '-@ {threads} '
+        '{input} '
+        '2> {log} '
+        '; '
+        'samtools index {output.bam} 2>> {log}'
